@@ -4,3 +4,8 @@ main = "src/index.tsx"
 
 [placement]
 mode = "smart"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "mountain-climbs"
+database_id = "cbe8fe86-dee3-48fd-875e-1989f307d85c"

@@ -1,44 +1,24 @@
 import { Hono } from 'hono'
 import { html } from 'hono/html'
 import { Layout } from './views/layout'
-// Import raw content for static files (in a real build step we might handle this differently, 
-// but for a simple worker we can import or read file. 
-// However, in standard Workers without a bundler config for raw imports, we might need to serve them differently.
-// For simplicity in this environment, I will serve them as strings or use a simple serveStatic if available, 
-// but since I don't have the file system at runtime in the same way, I'll embed the content or read it if I could.
-// Actually, the best way here without a complex build is to just serve the files I just wrote by reading them 
-// or pasting them here. But wait, I wrote them to disk. 
-// I can use `import` if I set up a bundler, but `wrangler dev` handles imports. 
-// Let's try to just serve the static files by reading them or defining them inline if needed.
-// To be safe and robust, I will read the files I just created using a helper or just re-define them here? 
-// No, that's redundant. 
-// I will assume I can't easily read the filesystem at runtime in a Worker.
-// So I will create routes that serve the content I defined. 
-// Wait, I can just import the CSS/JS as strings if I configure it, but I didn't.
-// I will just copy the content into variables here for the static assets to ensure it works 100% without build config issues.
-// Actually, I can just use `c.text()` with the content.
-
-// I'll read the files I just wrote to "embed" them in the final worker code if I were building it, 
-// but since I am writing the source code now, I should probably just put the content in a separate file and import it?
-// No, standard ES modules in Workers support importing code. 
-// I will use a simple pattern: I'll put the CSS and JS in the `src` folder (which I did) 
-// and I will try to import them. But importing CSS as a module isn't standard.
-// PLAN B: I will define the CSS and JS content in this file or a `assets.ts` file to serve them. 
-// This guarantees it works without loader config.
-
-// Let's read the files I just wrote to get their content so I can embed them in `assets.ts`.
-// I'll do that in a separate step or just re-write them. 
-// Actually, I'll just use the `view_file` tool to read them back if I needed to, but I know what I wrote.
-// I'll just re-write the CSS/JS into a `src/assets.ts` file that exports strings. 
-// This is the most robust way for a zero-config setup.
-
-// Wait, I already wrote `src/styles.css` and `src/client.js`. 
-// I will leave them there for reference, but I will create `src/assets.ts` with their content 
-// to serve them via Hono.
 
 import { cssContent, jsContent } from './assets'
 
-const app = new Hono()
+// D1 Database bindings
+type Bindings = {
+    DB: D1Database
+}
+
+type Climb = {
+    id: string
+    mountain_name: string
+    date: string
+    elevation: number
+    notes: string | null
+    created_at: string
+}
+
+const app = new Hono<{ Bindings: Bindings }>()
 
 app.get('/styles.css', (c) => {
     return c.text(cssContent, 200, { 'Content-Type': 'text/css' })
@@ -47,6 +27,50 @@ app.get('/styles.css', (c) => {
 app.get('/client.js', (c) => {
     return c.text(jsContent, 200, { 'Content-Type': 'application/javascript' })
 })
+
+// API Endpoints
+// GET all climbs
+app.get('/api/climbs', async (c) => {
+    try {
+        const { results } = await c.env.DB.prepare(
+            'SELECT * FROM climbs ORDER BY date DESC'
+        ).all()
+        return c.json(results)
+    } catch (error) {
+        console.error('Error fetching climbs:', error)
+        return c.json({ error: 'Failed to fetch climbs' }, 500)
+    }
+})
+
+// POST new climb
+app.post('/api/climbs', async (c) => {
+    try {
+        const body = await c.req.json()
+        const { id, mountainName, date, elevation, notes, createdAt } = body
+
+        await c.env.DB.prepare(
+            'INSERT INTO climbs (id, mountain_name, date, elevation, notes, created_at) VALUES (?, ?, ?, ?, ?, ?)'
+        ).bind(id, mountainName, date, parseInt(elevation), notes || null, createdAt).run()
+
+        return c.json({ success: true, id })
+    } catch (error) {
+        console.error('Error creating climb:', error)
+        return c.json({ error: 'Failed to create climb' }, 500)
+    }
+})
+
+// DELETE climb
+app.delete('/api/climbs/:id', async (c) => {
+    try {
+        const id = c.req.param('id')
+        await c.env.DB.prepare('DELETE FROM climbs WHERE id = ?').bind(id).run()
+        return c.json({ success: true })
+    } catch (error) {
+        console.error('Error deleting climb:', error)
+        return c.json({ error: 'Failed to delete climb' }, 500)
+    }
+})
+
 
 app.get('/', (c) => {
     return c.html(

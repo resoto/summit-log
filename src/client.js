@@ -1,22 +1,40 @@
 // Client-side logic for Summit Log
 
-// Helper to get climbs from LocalStorage
-function getClimbs() {
-    const climbs = localStorage.getItem('climbs');
-    return climbs ? JSON.parse(climbs) : [];
+// Helper to get climbs from API
+async function getClimbs() {
+    try {
+        const response = await fetch('/api/climbs');
+        if (!response.ok) throw new Error('Failed to fetch climbs');
+        return await response.json();
+    } catch (error) {
+        console.error('Error fetching climbs:', error);
+        return [];
+    }
 }
 
-// Helper to save climbs
-function saveClimb(climb) {
-    const climbs = getClimbs();
-    climbs.unshift(climb); // Add new climb to the beginning
-    localStorage.setItem('climbs', JSON.stringify(climbs));
+// Helper to save climb to API
+async function saveClimb(climb) {
+    try {
+        const response = await fetch('/api/climbs', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(climb)
+        });
+        if (!response.ok) throw new Error('Failed to save climb');
+        return await response.json();
+    } catch (error) {
+        console.error('Error saving climb:', error);
+        alert('登山記録の保存に失敗しました。もう一度お試しください。');
+        throw error;
+    }
 }
 
 // Handle Log Climb Form Submission
 const logForm = document.getElementById('log-climb-form');
 if (logForm) {
-    logForm.addEventListener('submit', (e) => {
+    logForm.addEventListener('submit', async (e) => {
         e.preventDefault();
 
         const formData = new FormData(logForm);
@@ -29,23 +47,26 @@ if (logForm) {
             createdAt: new Date().toISOString()
         };
 
-        saveClimb(climb);
-        window.location.href = '/history';
+        try {
+            await saveClimb(climb);
+            window.location.href = '/history';
+        } catch (error) {
+            // Error already handled in saveClimb
+        }
     });
 }
 
 // Render History List
 const historyList = document.getElementById('climb-history-list');
 if (historyList) {
-    const climbs = getClimbs();
-
-    if (climbs.length === 0) {
-        historyList.innerHTML = '<p style="text-align: center; color: #94a3b8;">No climbs logged yet. Start your journey!</p>';
-    } else {
-        historyList.innerHTML = climbs.map(climb => `
+    getClimbs().then(climbs => {
+        if (climbs.length === 0) {
+            historyList.innerHTML = '<p style="text-align: center; color: #94a3b8;">No climbs logged yet. Start your journey!</p>';
+        } else {
+            historyList.innerHTML = climbs.map(climb => `
       <li class="climb-item animate-fade-in">
         <div class="climb-info">
-          <h3>${climb.mountainName}</h3>
+          <h3>${climb.mountain_name}</h3>
           <div class="climb-meta">
             <span>📅 ${new Date(climb.date).toLocaleDateString()}</span>
             <span style="margin-left: 1rem;">⛰️ ${climb.elevation}m</span>
@@ -54,7 +75,8 @@ if (historyList) {
         </div>
       </li>
     `).join('');
-    }
+        }
+    });
 }
 
 // Render Dashboard Stats
@@ -63,16 +85,17 @@ const totalElevationEl = document.getElementById('stat-total-elevation');
 const highestPeakEl = document.getElementById('stat-highest-peak');
 
 if (totalClimbsEl && totalElevationEl && highestPeakEl) {
-    const climbs = getClimbs();
+    getClimbs().then(climbs => {
+        // Total Climbs
+        totalClimbsEl.textContent = climbs.length;
 
-    // Total Climbs
-    totalClimbsEl.textContent = climbs.length;
+        // Total Elevation
+        const totalElevation = climbs.reduce((sum, climb) => sum + Number(climb.elevation || 0), 0);
+        totalElevationEl.textContent = `${totalElevation}m`;
 
-    // Total Elevation
-    const totalElevation = climbs.reduce((sum, climb) => sum + Number(climb.elevation || 0), 0);
-    totalElevationEl.textContent = `${totalElevation}m`;
-
-    // Highest Peak
-    const highest = climbs.reduce((max, climb) => Math.max(max, Number(climb.elevation || 0)), 0);
-    highestPeakEl.textContent = `${highest}m`;
+        // Highest Peak
+        const highest = climbs.reduce((max, climb) => Math.max(max, Number(climb.elevation || 0)), 0);
+        highestPeakEl.textContent = `${highest}m`;
+    });
 }
+
